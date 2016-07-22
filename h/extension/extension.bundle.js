@@ -3271,9 +3271,9 @@ function BrowserAction(chromeBrowserAction) {
 
     if (state.state === states.ACTIVE) {
       activeIcon = icons[states.ACTIVE];
-      title = 'Hypothesis (client v35 experimental group admin v1) is active';
+      title = 'Hypothesis (v35, experimental group admin v1) is active';
     } else if (state.state === states.INACTIVE) {
-      title = 'Hypothesis (client v35 experimental group admin v1) is inactive';
+      title = 'Hypothesis (v35 experimental group admin v1) is inactive';
     } else if (state.state === states.ERRORED) {
       title = 'Hypothesis failed to load';
       badgeText = '!';
@@ -3289,10 +3289,10 @@ function BrowserAction(chromeBrowserAction) {
         totalString = '999+';
       }
       if (state.annotationCount === 1) {
-        countLabel = _("There's 1 annotation on this page");
+        countLabel = _("There's 1 annotation on this page (Hv35 Experimental Group Admin v1)");
       } else {
         countLabel = _('There are ' + totalString + ' annotations on ' +
-                  'this page');
+                  'this page (Hv35 Experimental Group Admin v1) ');
       }
       title = countLabel;
       badgeText = totalString;
