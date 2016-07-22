@@ -51,4 +51,99 @@ This logic intercepts the permissions check at the point where permissions are e
 - If found, retrieves (from local storage) the (initially empty) list of administratable ids (`admin_ids`) 
 - And updates it to include the id of the current annotation
 
+This info is then used in angular.jwt.interceptor like so:
+
+```
+  angular.module('angular-jwt.interceptor', [])
+  .provider('jwtInterceptor', function() {
+
+    this.urlParam = null;
+    this.authHeader = 'Authorization';
+    this.authPrefix = 'Bearer ';
+    this.tokenGetter = function() {
+      return null;
+    }
+
+    var config = this;
+
+    this.$get = ["$q", "$injector", "$rootScope", function ($q, $injector, $rootScope) {
+      return {
+        request: function (request) {
+          if (request.skipAuthorization) {
+            return request;
+          }
+
+          if (config.urlParam) {
+            request.params = request.params || {};
+            // Already has the token in the url itself
+            if (request.params[config.urlParam]) {
+              return request;
+            }
+          } else {
+            request.headers = request.headers || {};
+            // Already has an Authorization header
+            if (request.headers[config.authHeader]) {
+              return request;
+            }
+          }
+
+          var tokenPromise = $q.when($injector.invoke(config.tokenGetter, this, {
+            config: request
+          }));
+
+// begin group admin 
+		  var maybeChangeDeleteToken = function(request, token, admin_ids, admin_keys) {
+            var id = request.url.match(/https:\/\/hypothes.is\/api\/annotations\/(.+)/)[1];
+			for (var subjectUser in admin_ids) {
+				if ( admin_ids[subjectUser].indexOf(id) != -1 )
+					return admin_keys[subjectUser];
+			}
+				
+         	return token;
+		  }
+
+		  var maybeChangeUpdateToken = function(request, token, admin_ids, admin_keys) {
+            var id = request.data.id;
+			for (var subjectUser in admin_ids) {
+				if ( admin_ids[subjectUser].indexOf(id) != -1 )
+					return admin_keys[subjectUser];
+			}
+		  return token;
+		  }
+
+
+          return tokenPromise.then(function(token) {
+            if (token) {
+              if (config.urlParam) {
+                request.params[config.urlParam] = token;
+              } else {
+				var apiPattern = 'https://hypothes.is/api/annotations';
+				var admin_ids = JSON.parse(localStorage.getItem('admin_ids'));
+				var admin_keys = JSON.parse(localStorage.getItem('admin_keys'));
+				if ( request.url.startsWith(apiPattern) && request.method == 'DELETE' )
+					token = maybeChangeDeleteToken(request, token, admin_ids, admin_keys);
+				if ( request.url.startsWith(apiPattern) && request.method == 'PUT' )
+					token = maybeChangeUpdateToken(request, token, admin_ids, admin_keys);
+                request.headers[config.authHeader] = config.authPrefix + token;
+              }
+            }
+            return request;
+          });
+        },
+
+// end group admin 
+
+        responseError: function (response) {
+          // handle the case where the user is not authenticated
+          if (response.status === 401) {
+            $rootScope.$broadcast('unauthenticated', response);
+          }
+          return $q.reject(response);
+        }
+      };
+    }];
+  });
+
+
+  ```
 
