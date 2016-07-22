@@ -48,5 +48,7 @@ This logic intercepts the permissions check at the point where permissions are e
 
 - Captures the username of the user who created the annotation.
 - Looks for that username in the list of subject_users relayed from the config field to local storage.
-- If found, retrieves (from local storage) the (initially empty) list of administratable ids (`admin_ids`) and updates it to include the id of the current annotation
-- 
+- If found, retrieves (from local storage) the (initially empty) list of administratable ids (`admin_ids`) 
+- And updates it to include the id of the current annotation
+
+
