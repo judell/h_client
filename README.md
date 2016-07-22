@@ -1,60 +1,151 @@
-Hypothesis client
-=================
+This experimental branch enables a simple form of group administration.
 
-[![Build status](https://img.shields.io/travis/hypothesis/client/master.svg)][travis]
-[![npm version](https://img.shields.io/npm/v/hypothesis.svg)][npm]
-[![#hypothes.is IRC channel](https://img.shields.io/badge/IRC-%23hypothes.is-blue.svg)][irc]
-[![BSD licensed](https://img.shields.io/badge/license-BSD-blue.svg)][license]
+The extension reads a configuration file named in group-admin-helper.js, which defines:
 
-[travis]: https://travis-ci.org/hypothesis/client
-[npm]: https://www.npmjs.com/package/hypothesis
-[irc]: https://www.irccloud.com/invite?channel=%23hypothes.is&amp;hostname=irc.freenode.net&amp;port=6667&amp;ssl=1
-[license]: https://github.com/hypothesis/client/blob/master/LICENSE
+1. A set of users subject to having annotations edited or deleted by the operator of the extension.
+2. API keys provided by those users.
 
-The Hypothesis client is a browser-based tool for making annotations on web
-documents. It is used by the [Hypothesis browser extension][ext], and can also
-be [embedded directly on web pages][embed].
+This info lands in the extension's localStorage like so:
 
-![Screenshot of Hypothesis client](/images/screenshot.png?raw=true)
+```
+  localStorage.setItem('admin_ids',  JSON.stringify(config.admin_ids) );
+  localStorage.setItem('admin_keys', JSON.stringify(config.admin_keys) );
+  localStorage.setItem('subject_users', JSON.stringify(config.subject_users) );
 
-[ext]: https://chrome.google.com/webstore/detail/hypothesis-web-pdf-annota/bjfhmglciegochdpefhhlphglcehbmek
-[embed]: https://hypothes.is/for-publishers/
+```
 
-Development
------------
+In the JS generated from permissions.coffee, it adds this:
 
-We'll soon be adding instructions on how to set up a development environment for
-the Hypothesis client.
+```
+// begin group admin variant
+        function isSubjectToAdmin(user) {
+          try {
+          var subject_users = JSON.parse(localStorage.getItem('subject_users'));
+          return subject_users.indexOf(user) != -1;
+            }
+          catch (e) {
+            return false;
+            }
+          }
+        var check_user = context.user.replace('acct:','').replace('@hypothes.is','');
+        if ( isSubjectToAdmin(check_user) ) {
+          var admin_ids = JSON.parse(localStorage.getItem('admin_ids'));
+          var ids_for_user = admin_ids[check_user];
+          if ( ids_for_user ) {
+            if ( ids_for_user.indexOf(context.id) == -1) 
+              ids_for_user.push(context.id);
+          }
+          else 
+            ids_for_user = [context.id];
+          admin_ids[check_user] = ids_for_user;
+          localStorage.setItem('admin_ids', JSON.stringify(admin_ids));
+          return true;
+          }
+// end group admin variant
+```
 
-If you are already clear on the difference between this repository and the
-[`hypothesis/h`](https://github.com/hypothesis/h) repository then in the mean
-time the [Contributor's Guide](https://h.readthedocs.io/en/latest/developing/)
-may be of use. Be aware that many instructions in that guide do not apply to
-this repository.
+This logic intercepts the permissions check at the point where permissions are evaluated for an annotation card dispayed in the sidebar. It:
 
-Community
----------
+- Captures the username of the user who created the annotation.
+- Looks for that username in the list of subject_users relayed from the config field to local storage.
+- If found, retrieves (from local storage) the (initially empty) list of administratable ids (`admin_ids`) 
+- And updates it to include the id of the current annotation
 
-Join us in [#hypothes.is][irc] on [freenode](https://freenode.net/) for
-discussion.
+This exposes edit and delete buttons on annotations created by subject users named in the config file. 
 
-If you'd like to contribute to the project, you should consider subscribing to
-the [development mailing list][ml], where we can help you plan your
-contributions.
+This info is then used in angular.jwt.interceptor like so:
 
-Please note that this project is released with a [Contributor Code of
-Conduct][coc]. By participating in this project you agree to abide by its terms.
+```
+  angular.module('angular-jwt.interceptor', [])
+  .provider('jwtInterceptor', function() {
 
-[ml]: https://groups.google.com/a/list.hypothes.is/forum/#!forum/dev
-[coc]: https://github.com/hypothesis/client/blob/master/CODE_OF_CONDUCT
+    this.urlParam = null;
+    this.authHeader = 'Authorization';
+    this.authPrefix = 'Bearer ';
+    this.tokenGetter = function() {
+      return null;
+    }
 
-License
--------
+    var config = this;
 
-The Hypothesis client is released under the [2-Clause BSD License][bsd2c],
-sometimes referred to as the "Simplified BSD License". Some third-party
-components are included. They are subject to their own licenses. All of the
-license information can be found in the included [LICENSE][license] file.
+    this.$get = ["$q", "$injector", "$rootScope", function ($q, $injector, $rootScope) {
+      return {
+        request: function (request) {
+          if (request.skipAuthorization) {
+            return request;
+          }
 
-[bsd2c]: http://www.opensource.org/licenses/BSD-2-Clause
-[license]: https://github.com/hypothesis/client/blob/master/LICENSE
+          if (config.urlParam) {
+            request.params = request.params || {};
+            // Already has the token in the url itself
+            if (request.params[config.urlParam]) {
+              return request;
+            }
+          } else {
+            request.headers = request.headers || {};
+            // Already has an Authorization header
+            if (request.headers[config.authHeader]) {
+              return request;
+            }
+          }
+
+          var tokenPromise = $q.when($injector.invoke(config.tokenGetter, this, {
+            config: request
+          }));
+
+// begin group admin 
+	  var maybeChangeDeleteToken = function(request, token, admin_ids, admin_keys) {
+            var id = request.url.match(/https:\/\/hypothes.is\/api\/annotations\/(.+)/)[1];
+			for (var subjectUser in admin_ids) {
+				if ( admin_ids[subjectUser].indexOf(id) != -1 )
+					return admin_keys[subjectUser];
+			}
+				
+         	return token;
+		  }
+
+	  var maybeChangeUpdateToken = function(request, token, admin_ids, admin_keys) {
+            var id = request.data.id;
+			for (var subjectUser in admin_ids) {
+				if ( admin_ids[subjectUser].indexOf(id) != -1 )
+					return admin_keys[subjectUser];
+			}
+		  return token;
+		  }
+
+
+          return tokenPromise.then(function(token) {
+            if (token) {
+              if (config.urlParam) {
+                request.params[config.urlParam] = token;
+              } else {
+				var apiPattern = 'https://hypothes.is/api/annotations';
+				var admin_ids = JSON.parse(localStorage.getItem('admin_ids'));
+				var admin_keys = JSON.parse(localStorage.getItem('admin_keys'));
+				if ( request.url.startsWith(apiPattern) && request.method == 'DELETE' )
+					token = maybeChangeDeleteToken(request, token, admin_ids, admin_keys);
+				if ( request.url.startsWith(apiPattern) && request.method == 'PUT' )
+					token = maybeChangeUpdateToken(request, token, admin_ids, admin_keys);
+                request.headers[config.authHeader] = config.authPrefix + token;
+              }
+            }
+            return request;
+          });
+        },
+
+// end group admin 
+
+        responseError: function (response) {
+          // handle the case where the user is not authenticated
+          if (response.status === 401) {
+            $rootScope.$broadcast('unauthenticated', response);
+          }
+          return $q.reject(response);
+        }
+      };
+    }];
+  });
+
+
+  ```
+
