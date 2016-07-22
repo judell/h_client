@@ -51,6 +51,8 @@ This logic intercepts the permissions check at the point where permissions are e
 - If found, retrieves (from local storage) the (initially empty) list of administratable ids (`admin_ids`) 
 - And updates it to include the id of the current annotation
 
+This exposes edit and delete buttons on annotations created by subject users named in the config file. 
+
 This info is then used in angular.jwt.interceptor like so:
 
 ```
@@ -92,7 +94,7 @@ This info is then used in angular.jwt.interceptor like so:
           }));
 
 // begin group admin 
-		  var maybeChangeDeleteToken = function(request, token, admin_ids, admin_keys) {
+	  var maybeChangeDeleteToken = function(request, token, admin_ids, admin_keys) {
             var id = request.url.match(/https:\/\/hypothes.is\/api\/annotations\/(.+)/)[1];
 			for (var subjectUser in admin_ids) {
 				if ( admin_ids[subjectUser].indexOf(id) != -1 )
@@ -102,7 +104,7 @@ This info is then used in angular.jwt.interceptor like so:
          	return token;
 		  }
 
-		  var maybeChangeUpdateToken = function(request, token, admin_ids, admin_keys) {
+	  var maybeChangeUpdateToken = function(request, token, admin_ids, admin_keys) {
             var id = request.data.id;
 			for (var subjectUser in admin_ids) {
 				if ( admin_ids[subjectUser].indexOf(id) != -1 )
