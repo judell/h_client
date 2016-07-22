@@ -1,0 +1,13 @@
+Sample control file:
+
+https://drivenotepad.github.io/app/?state={%22action%22:%22open%22,%22ids%22:[%220Bz4y9G08pmrYcU9PNDN5bUxJdTQ%22]}
+
+Sample contents:
+
+{ 
+  "admin_ids": {},
+  "admin_keys": {
+          "user1": "user1key",
+          "user2":"user2key"},
+  "subject_users": ["user1","user2"]
+}
